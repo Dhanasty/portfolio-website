@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:arocksworld.com)",
+      "Bash(cd \"C:\\\\Users\\\\Dhana\\\\Documents\\\\Personal Projects\\\\portfolio-cursor\" && npm install gsap 2>&1 | tail -5)"
+    ]
+  }
+}

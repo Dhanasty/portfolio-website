@@ -1,26 +1,171 @@
 @import "tailwindcss";
 
+/* ─── Design tokens ────────────────────────────────────────────────────────── */
+
+@theme {
+  --color-bg:        #0a0a0a;
+  --color-surface:   #111111;
+  --color-cream:     #e8e4d9;   /* primary text — warm off-white */
+  --color-secondary: #585858;
+  --color-border:    #1e1e1e;
+  --font-sans: var(--font-inter);
+}
+
+/* ─── CSS custom props for timing & easing (all animations reference these) ─ */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --ease-expo:        cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-expo-inout:  cubic-bezier(0.87, 0, 0.13, 1);
+  --ease-cubic:       cubic-bezier(0.33, 1, 0.68, 1);
+  --ease-brutal:      cubic-bezier(0.76, 0, 0.24, 1);
+
+  --dur-xs:  0.22s;
+  --dur-sm:  0.42s;
+  --dur-md:  0.65s;
+  --dur-lg:  1.0s;
+  --dur-xl:  1.4s;
+
+  /* Profile panel — matches the fixed right image width in layout.tsx */
+  --profile-panel-w: clamp(160px, 17vw, 240px);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+/* ─── Keyframes ─────────────────────────────────────────────────────────────── */
+
+@keyframes marquee {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+/* Shimmer travels across a 1px rule */
+@keyframes shimmer-travel {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(100%); }
+}
+
+/* Custom pulsing dot — scale + opacity */
+@keyframes dot-pulse {
+  0%, 100% { transform: scale(1);   opacity: 1;   }
+  45%       { transform: scale(0.6); opacity: 0.4; }
+}
+
+/* ─── Typography scale ──────────────────────────────────────────────────────── */
+
+@layer utilities {
+
+  .text-display {
+    font-size: clamp(4.5rem, 17vw, 21rem);
+    line-height: 0.82;
+    letter-spacing: -0.04em;
+    font-weight: 900;
+    text-transform: uppercase;
+  }
+
+  .text-display-sm {
+    font-size: clamp(3rem, 10vw, 12rem);
+    line-height: 0.85;
+    letter-spacing: -0.04em;
+    font-weight: 900;
+    text-transform: uppercase;
+  }
+
+  .text-label {
+    font-size: 0.6875rem;
+    letter-spacing: 0.4em;
+    text-transform: uppercase;
+    font-weight: 500;
+  }
+
+  .text-body {
+    font-size: 1rem;
+    line-height: 1.75;
+  }
+
+  /* 1px cream separator with animated shimmer highlight */
+  .shimmer-rule {
+    position: relative;
+    height: 1px;
+    overflow: hidden;
+    background: rgba(232, 228, 217, 0.09);
+  }
+
+  .shimmer-rule::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    width: 40%;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(232, 228, 217, 0.6) 50%,
+      transparent 100%
+    );
+    animation: shimmer-travel 3.5s ease-in-out infinite;
+    animation-delay: 0.8s;
   }
 }
 
+/* ─── Reset ─────────────────────────────────────────────────────────────────── */
+
+* {
+  box-sizing: border-box;
+  padding: 0;
+  margin: 0;
+}
+
+*, *::before, *::after {
+  cursor: none !important;
+}
+
+/* ─── Grain texture overlay ─────────────────────────────────────────────────── */
+/* z-index 9000: above page content, below UI chrome (cursor / preloader / menu) */
+
+html::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  pointer-events: none;
+  opacity: 0.042;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.88' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 175px 175px;
+  background-repeat: repeat;
+}
+
+/* ─── Base styles ───────────────────────────────────────────────────────────── */
+
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: #0a0a0a;
+  color: #e8e4d9;
+  font-family: var(--font-inter), 'Inter', Arial, sans-serif;
+  overflow-x: hidden;
+  cursor: none;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ─── Scrollbar ─────────────────────────────────────────────────────────────── */
+
+::-webkit-scrollbar        { width: 1px; }
+::-webkit-scrollbar-track  { background: #0a0a0a; }
+::-webkit-scrollbar-thumb  { background: #252525; }
+
+/* ─── Text selection ────────────────────────────────────────────────────────── */
+
+::selection {
+  background: #e8e4d9;
+  color: #0a0a0a;
+}
+
+/* ─── Prefers reduced motion ────────────────────────────────────────────────── */
+/* Immediately resolves all animations to their end state.                       */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
