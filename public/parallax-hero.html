@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>3D Layered Parallax Portrait</title>
+  <style>
+    /* ─────────────────────────────────────────────
+       RESET & BASE
+    ───────────────────────────────────────────── */
+    *, *::before, *::after {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      background: #020c0f;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      font-family: 'Inter', system-ui, sans-serif;
+      overflow: hidden;
+    }
+
+    /* ─────────────────────────────────────────────
+       HERO CONTAINER
+       - Perspective is set here (not on the card)
+         so the child's 3D transforms are relative
+         to a stable vanishing point.
+       - overflow: hidden clips layers when they pan
+    ───────────────────────────────────────────── */
+    .hero {
+      position: relative;
+      width: min(480px, 90vw);
+      aspect-ratio: 3 / 4;           /* portrait frame */
+      perspective: 1000px;
+      perspective-origin: 50% 50%;
+      cursor: none;                  /* hide system cursor — optional */
+    }
+
+    /* ─────────────────────────────────────────────
+       CARD
+       - This element tilts in 3D on mouse move.
+       - transform-style: preserve-3d passes the
+         perspective context to children.
+       - will-change tells the GPU to pre-composite
+         this layer.
+    ───────────────────────────────────────────── */
+    .card {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      border-radius: 4px;
+
+      /* GPU acceleration */
+      transform-style: preserve-3d;
+      will-change: transform, box-shadow;
+
+      /* Default smooth transition used on mouse-leave */
+      transition: box-shadow 0.6s ease;
+
+      /* Cinematic depth shadow — shifts with tilt */
+      box-shadow:
+        0 30px 80px rgba(0, 0, 0, 0.8),
+        0 0 0 1px rgba(94, 212, 212, 0.06);
+    }
+
+    /* ─────────────────────────────────────────────
+       SHARED LAYER RULES
+       All three image layers occupy the exact same
+       space (absolute inset-0). They differ only in
+       z-index, opacity, filter, and JS-driven offset.
+    ───────────────────────────────────────────── */
+    .layer {
+      position: absolute;
+      inset: 0;                       /* pins all four edges */
+      will-change: transform;         /* GPU hint for translate */
+
+      /* scale(1.15) gives each layer room to pan
+         without ever revealing the dark background */
+      transform: scale(1.15) translate(0px, 0px);
+    }
+
+    .layer img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      object-position: center top;
+      display: block;
+      user-select: none;
+      pointer-events: none;
+      -webkit-user-drag: none;
+    }
+
+    /* ─────────────────────────────────────────────
+       LAYER 1 — Background (slowest, dimmest)
+       Sits furthest back. Blurred to push it away
+       visually and add atmospheric depth.
+    ───────────────────────────────────────────── */
+    .layer-bg {
+      z-index: 1;
+    }
+    .layer-bg img {
+      filter: brightness(0.38) blur(2px) saturate(0.8);
+      opacity: 0.85;
+    }
+
+    /* ─────────────────────────────────────────────
+       LAYER 2 — Echo / Ghost (medium speed)
+       Offset slightly to the right and tinted cyan
+       to create the "colour echo / chromatic" look.
+       Mix-blend-mode screen merges it over layer 1.
+    ───────────────────────────────────────────── */
+    .layer-echo {
+      z-index: 2;
+      /* Static horizontal ghost offset */
+      transform: scale(1.15) translate(12px, 0px);
+    }
+    .layer-echo img {
+      filter: brightness(0.55) blur(0.5px) hue-rotate(160deg) saturate(1.6);
+      opacity: 0.45;
+      mix-blend-mode: screen;
+    }
+
+    /* ─────────────────────────────────────────────
+       LAYER 3 — Subject / Foreground (fastest)
+       The sharp, main portrait. Moves most on hover
+       to feel closest to the viewer.
+    ───────────────────────────────────────────── */
+    .layer-fg {
+      z-index: 3;
+    }
+    .layer-fg img {
+      filter: brightness(0.78) contrast(1.08) saturate(0.95);
+      opacity: 1;
+    }
+
+    /* ─────────────────────────────────────────────
+       GRADIENT OVERLAYS — z-index above all layers
+    ───────────────────────────────────────────── */
+    .overlay-vignette {
+      position: absolute;
+      inset: 0;
+      z-index: 10;
+      pointer-events: none;
+      background:
+        /* top dark fade */
+        linear-gradient(to bottom, rgba(2,12,15,0.55) 0%, transparent 30%,
+          /* bottom strong fade */
+          rgba(2,12,15,0.92) 85%, rgba(2,12,15,1) 100%);
+    }
+
+    /* Teal rim-light — reacts to mouse position via JS */
+    .overlay-rim {
+      position: absolute;
+      inset: 0;
+      z-index: 11;
+      pointer-events: none;
+      /* Updated live in JS */
+      background: radial-gradient(
+        ellipse at 50% 50%,
+        rgba(94, 212, 212, 0.07) 0%,
+        transparent 65%
+      );
+      transition: background 0.1s linear;
+    }
+
+    /* ─────────────────────────────────────────────
+       NAME CARD — floats above layers, translateZ
+       pushes it toward the viewer in 3D space
+    ───────────────────────────────────────────── */
+    .name-card {
+      position: absolute;
+      bottom: 32px;
+      left: 28px;
+      right: 28px;
+      z-index: 20;
+      pointer-events: none;
+
+      /* Pushes toward viewer along Z axis */
+      transform: translateZ(40px);
+    }
+
+    .name-card h2 {
+      font-size: clamp(1.3rem, 4vw, 1.9rem);
+      font-weight: 900;
+      letter-spacing: -0.04em;
+      line-height: 1.1;
+      color: #e8e4d9;
+      margin-bottom: 6px;
+    }
+
+    .name-card p {
+      font-size: 0.6875rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: rgba(94, 212, 212, 0.7);
+    }
+
+    /* ─────────────────────────────────────────────
+       CUSTOM CURSOR DOT
+    ───────────────────────────────────────────── */
+    .cursor {
+      position: fixed;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: rgba(94, 212, 212, 0.9);
+      pointer-events: none;
+      z-index: 9999;
+      transform: translate(-50%, -50%);
+      transition: transform 0.1s ease, opacity 0.3s ease;
+    }
+
+    /* ─────────────────────────────────────────────
+       RESPONSIVE — scale down on small screens
+    ───────────────────────────────────────────── */
+    @media (max-width: 520px) {
+      .hero { width: 88vw; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Custom cursor dot -->
+  <div class="cursor" id="cursor"></div>
+
+  <!--
+    HERO CONTAINER
+    Sets up the perspective context. Mouse events are
+    tracked on this element.
+  -->
+  <div class="hero" id="hero">
+
+    <!--
+      CARD
+      This is the element that actually tilts in 3D.
+      All layers live inside it.
+    -->
+    <div class="card" id="card">
+
+      <!-- LAYER 1: Background (slowest parallax, most blur) -->
+      <div class="layer layer-bg" id="layer-bg">
+        <img src="profile.png" alt="" aria-hidden="true" draggable="false" />
+      </div>
+
+      <!-- LAYER 2: Echo / ghost (medium parallax, cyan tint, blended) -->
+      <div class="layer layer-echo" id="layer-echo">
+        <img src="profile.png" alt="" aria-hidden="true" draggable="false" />
+      </div>
+
+      <!-- LAYER 3: Subject / foreground (fastest parallax, sharpest) -->
+      <div class="layer layer-fg" id="layer-fg">
+        <img src="profile.png" alt="Dhanasekar S" draggable="false" />
+      </div>
+
+      <!-- Gradient overlays (static depth) -->
+      <div class="overlay-vignette"></div>
+      <div class="overlay-rim" id="rim"></div>
+
+      <!-- Name card floats above everything via translateZ -->
+      <div class="name-card">
+        <h2>Dhanasekar S</h2>
+        <p>AI Engineer &amp; Creative Developer</p>
+      </div>
+
+    </div><!-- /card -->
+  </div><!-- /hero -->
+
+  <script>
+    /**
+     * ─────────────────────────────────────────────
+     * PARALLAX HERO — 3D Layered Portrait
+     * ─────────────────────────────────────────────
+     *
+     * Architecture:
+     *  1. Track raw mouse position relative to hero container.
+     *  2. Normalise to -0.5 … 0.5 (centre = 0,0).
+     *  3. Run ease-smoothing every rAF tick so values
+     *     lag behind the real cursor position — this is
+     *     what gives the "premium weight" feel.
+     *  4. Apply different multipliers to each layer
+     *     so they move at different speeds → parallax depth.
+     *  5. Tilt the card itself (rotateX / rotateY) for the 3D plane.
+     */
+
+    const hero   = document.getElementById('hero');
+    const card   = document.getElementById('card');
+    const layerBg    = document.getElementById('layer-bg');
+    const layerEcho  = document.getElementById('layer-echo');
+    const layerFg    = document.getElementById('layer-fg');
+    const rim        = document.getElementById('rim');
+    const cursor     = document.getElementById('cursor');
+
+    // ── State ──────────────────────────────────────────────────────────────
+
+    // Raw normalised mouse position (-0.5 to 0.5)
+    let mouseX = 0, mouseY = 0;
+
+    // Smoothed (eased) values — these trail behind mouse
+    let smoothX = 0, smoothY = 0;
+
+    // Whether mouse is inside the hero
+    let isHovered = false;
+
+    // rafId for cleanup
+    let rafId = null;
+
+    // ── Config ─────────────────────────────────────────────────────────────
+
+    const CONFIG = {
+      // Ease factor: lower = more lag, higher = snappier
+      // 0.06 gives a premium "heavy" feel
+      ease: 0.06,
+
+      // Max card tilt in degrees
+      tiltMax: 12,
+
+      // Parallax translation range in px for each layer
+      // Larger number = that layer moves more = feels closer
+      bg:   { x: 10,  y: 6  },   // furthest back — barely moves
+      echo: { x: 22,  y: 14 },   // mid layer
+      fg:   { x: 38,  y: 24 },   // foreground — moves most
+
+      // Ghost echo static offset (gives the "broken" look at rest)
+      echoOffsetX: 12,
+
+      // Box shadow config
+      shadowSpread: 30,
+    };
+
+    // ── Mouse tracking ──────────────────────────────────────────────────────
+
+    hero.addEventListener('mouseenter', () => {
+      isHovered = true;
+      cursor.style.opacity = '1';
+    });
+
+    hero.addEventListener('mouseleave', () => {
+      isHovered = false;
+      // Return targets to 0 — smoothing handles the spring-back
+      mouseX = 0;
+      mouseY = 0;
+      cursor.style.opacity = '0';
+    });
+
+    hero.addEventListener('mousemove', (e) => {
+      const rect = hero.getBoundingClientRect();
+
+      // Normalise: 0,0 at centre, range -0.5 to 0.5
+      mouseX = (e.clientX - rect.left)  / rect.width  - 0.5;
+      mouseY = (e.clientY - rect.top)   / rect.height - 0.5;
+
+      // Move custom cursor
+      cursor.style.left = e.clientX + 'px';
+      cursor.style.top  = e.clientY + 'px';
+    });
+
+    // ── rAF loop ────────────────────────────────────────────────────────────
+
+    /**
+     * Lerp (linear interpolation) — the core of the smoothing.
+     * Each frame, the smooth value moves (ease)% of the way
+     * toward the target. This is equivalent to an exponential
+     * moving average and gives the signature "lag" feel.
+     */
+    function lerp(current, target, factor) {
+      return current + (target - current) * factor;
+    }
+
+    function tick() {
+      rafId = requestAnimationFrame(tick);
+
+      // ── Step 1: Ease-smooth the mouse values ──
+      smoothX = lerp(smoothX, mouseX, CONFIG.ease);
+      smoothY = lerp(smoothY, mouseY, CONFIG.ease);
+
+      // ── Step 2: Card tilt (rotateX / rotateY) ──
+      // rotateY tilts left/right, rotateX tilts up/down
+      // Note: rotateX is inverted so moving up tilts the top toward viewer
+      const rotY =  smoothX * CONFIG.tiltMax;
+      const rotX = -smoothY * CONFIG.tiltMax;
+
+      card.style.transform =
+        `perspective(1000px) rotateX(${rotX}deg) rotateY(${rotY}deg)`;
+
+      // ── Step 3: Dynamic box-shadow shifts opposite to tilt ──
+      // When tilted right, shadow moves left (light source on the right)
+      const shadowX = -smoothX * CONFIG.shadowSpread;
+      const shadowY =  smoothY * CONFIG.shadowSpread;
+      card.style.boxShadow = `
+        ${shadowX}px ${shadowY + 30}px 80px rgba(0,0,0,0.85),
+        ${shadowX * 0.3}px ${shadowY * 0.3}px 120px rgba(94,212,212,0.08),
+        0 0 0 1px rgba(94,212,212,0.06)
+      `;
+
+      // ── Step 4: Parallax translate each layer independently ──
+      // Each layer uses a different multiplier so they move at different speeds.
+      // scale(1.15) is baked in via CSS to prevent edge-revealing.
+
+      const bgTx    =  smoothX * CONFIG.bg.x;
+      const bgTy    =  smoothY * CONFIG.bg.y;
+      layerBg.style.transform =
+        `scale(1.15) translate(${bgTx}px, ${bgTy}px)`;
+
+      // Echo layer keeps its static horizontal ghost offset PLUS the parallax
+      const echoTx  =  smoothX * CONFIG.echo.x + CONFIG.echoOffsetX;
+      const echoTy  =  smoothY * CONFIG.echo.y;
+      layerEcho.style.transform =
+        `scale(1.15) translate(${echoTx}px, ${echoTy}px)`;
+
+      const fgTx    =  smoothX * CONFIG.fg.x;
+      const fgTy    =  smoothY * CONFIG.fg.y;
+      layerFg.style.transform =
+        `scale(1.15) translate(${fgTx}px, ${fgTy}px)`;
+
+      // ── Step 5: Rim-light follows cursor position ──
+      // Shift the radial gradient origin toward the cursor
+      const rimCx = 50 + smoothX * 60;   // 20% … 80%
+      const rimCy = 50 + smoothY * 60;
+      rim.style.background =
+        `radial-gradient(ellipse at ${rimCx}% ${rimCy}%, rgba(94,212,212,0.09) 0%, transparent 65%)`;
+    }
+
+    // Start the loop
+    tick();
+  </script>
+
+</body>
+</html>

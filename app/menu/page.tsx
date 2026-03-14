@@ -49,62 +49,12 @@ export default function MenuPage() {
         </span>
       </button>
 
-      {/* ══ LEFT — portrait (30%) ══════════════════════════════════════════ */}
-      <motion.div
-        className="relative hidden md:block flex-shrink-0"
-        style={{ width: "30%" }}
-        initial={{ opacity: 0, x: -20 }}
-        animate={{ opacity: 1, x: 0, transition: { duration: 0.7, ease: EASE } }}
-      >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src="/profile.png"
-          alt="Dhanasekar S"
-          style={{
-            width: "100%",
-            height: "100%",
-            objectFit: "cover",
-            objectPosition: "center top",
-            filter: "grayscale(0.1) brightness(0.68)",
-            display: "block",
-          }}
-        />
-        {/* Gradient overlays */}
-        <div
-          className="absolute inset-0"
-          style={{
-            background:
-              "linear-gradient(to bottom, rgba(2,12,15,0.5) 0%, transparent 40%, rgba(2,12,15,0.85) 100%)",
-          }}
-        />
-        <div
-          className="absolute inset-y-0 right-0"
-          style={{
-            width: 80,
-            background: "linear-gradient(to right, transparent, #020c0f)",
-          }}
-        />
-
-        {/* Name + role pinned bottom */}
-        <div className="absolute bottom-10 left-8 right-10">
-          <p
-            className="font-black tracking-tighter leading-tight mb-2"
-            style={{ fontSize: "clamp(1.4rem, 2.5vw, 2.4rem)", color: "#e8e4d9" }}
-          >
-            Dhanasekar S
-          </p>
-          <p className="text-label" style={{ color: "rgba(94,212,212,0.65)" }}>
-            AI Engineer &amp; Creative Developer
-          </p>
-        </div>
-      </motion.div>
-
-      {/* ══ RIGHT — nav (70%) ══════════════════════════════════════════════ */}
+      {/* ══ LEFT — nav (30%) ══════════════════════════════════════════════ */}
       <div
-        className="flex flex-col justify-between flex-1 px-10 sm:px-14 py-8"
+        className="flex flex-col justify-between flex-shrink-0 px-10 sm:px-14 py-8"
         style={{
-          background:
-            "linear-gradient(135deg, #0a2e32 0%, #061a1e 55%, #020c0f 100%)",
+          width: "30%",
+          background: "linear-gradient(135deg, #0a2e32 0%, #061a1e 55%, #020c0f 100%)",
         }}
       >
         {/* Top bar */}
@@ -177,7 +127,7 @@ export default function MenuPage() {
                     <motion.span
                       className="block font-black leading-none tracking-tighter"
                       style={{
-                        fontSize: "clamp(2.6rem, 5.5vw, 6.5rem)",
+                        fontSize: "clamp(1.6rem, 3vw, 3.5rem)",
                         color: "#e8e4d9",
                         willChange: "transform",
                       }}
@@ -244,6 +194,55 @@ export default function MenuPage() {
           </div>
         </motion.div>
       </div>
+
+      {/* ══ RIGHT — portrait (70%) ══════════════════════════════════════════ */}
+      <motion.div
+        className="relative hidden md:block flex-1"
+        initial={{ opacity: 0, x: 20 }}
+        animate={{ opacity: 1, x: 0, transition: { duration: 0.7, ease: EASE } }}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/profile.png"
+          alt="Dhanasekar S"
+          style={{
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+            objectPosition: "center top",
+            filter: "grayscale(0.1) brightness(0.68)",
+            display: "block",
+          }}
+        />
+        {/* Gradient overlays */}
+        <div
+          className="absolute inset-0"
+          style={{
+            background:
+              "linear-gradient(to bottom, rgba(2,12,15,0.5) 0%, transparent 40%, rgba(2,12,15,0.85) 100%)",
+          }}
+        />
+        <div
+          className="absolute inset-y-0 left-0"
+          style={{
+            width: 80,
+            background: "linear-gradient(to left, transparent, #020c0f)",
+          }}
+        />
+
+        {/* Name + role pinned bottom */}
+        <div className="absolute bottom-10 left-10 right-8">
+          <p
+            className="font-black tracking-tighter leading-tight mb-2"
+            style={{ fontSize: "clamp(1.4rem, 2.5vw, 2.4rem)", color: "#e8e4d9" }}
+          >
+            Dhanasekar S
+          </p>
+          <p className="text-label" style={{ color: "rgba(94,212,212,0.65)" }}>
+            AI Engineer &amp; Creative Developer
+          </p>
+        </div>
+      </motion.div>
     </div>
   );
 }

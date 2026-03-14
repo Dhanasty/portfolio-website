@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useMotionValue, useSpring, useTransform } from "framer-motion";
 import { X, Menu } from "lucide-react";
 
 // ─── Data ─────────────────────────────────────────────────────────────────────
@@ -21,6 +21,231 @@ const SOCIALS = [
 ];
 
 const EASE = [0.22, 1, 0.36, 1] as const;
+
+// ─── Parallax Stack Config ────────────────────────────────────────────────────
+//
+// Each layer uses the same source image but a different speedMultiplier.
+// Math: layerX = mouseX * speedMultiplier
+//       layerY = mouseY * speedMultiplier
+// mouseX/Y are raw pixel offsets from the container centre.
+//
+// multiplier = 0   → anchor, locked in place (visual ground)
+// multiplier > 0   → moves with the mouse (same direction)
+// multiplier < 0   → moves opposite to the mouse ("looking around" the subject)
+
+const PARALLAX_LAYERS = [
+  {
+    id: "anchor",
+    // Locked — acts as the stable cinematic backdrop
+    speedMultiplier: 0,
+    filter: "brightness(0.32) blur(3px) saturate(0.65)",
+    opacity: 1,
+    blendMode: "normal" as const,
+    zIndex: 1,
+    ghostOffsetX: 0,   // no static offset for the anchor
+  },
+  {
+    id: "midground",
+    // Slow drift — mid-depth details
+    speedMultiplier: 0.05,
+    filter: "brightness(0.6) hue-rotate(160deg) saturate(2) blur(0.4px)",
+    opacity: 0.5,
+    blendMode: "screen" as const,
+    zIndex: 2,
+    ghostOffsetX: 14,  // static 14px right offset → chromatic ghost look at rest
+  },
+  {
+    id: "foreground",
+    // Negative multiplier → moves OPPOSITE to mouse → "looking around" the subject
+    speedMultiplier: -0.15,
+    filter: "brightness(0.8) contrast(1.08) saturate(0.95)",
+    opacity: 1,
+    blendMode: "normal" as const,
+    zIndex: 3,
+    ghostOffsetX: 0,
+  },
+] as const;
+
+// ─── Single Layer (sub-component so hooks run per-layer cleanly) ──────────────
+
+function ParallaxLayer({
+  src,
+  layer,
+  mouseX,
+  mouseY,
+  isAlt,
+  alt,
+}: {
+  src: string;
+  layer: typeof PARALLAX_LAYERS[number];
+  mouseX: ReturnType<typeof useSpring>;
+  mouseY: ReturnType<typeof useSpring>;
+  isAlt: boolean;
+  alt: string;
+}) {
+  // layerX = mouseX * speedMultiplier + ghostOffsetX (static)
+  const x = useTransform(mouseX, (v) => v * layer.speedMultiplier + layer.ghostOffsetX);
+  const y = useTransform(mouseY, (v) => v * layer.speedMultiplier);
+
+  return (
+    <motion.div
+      className="absolute inset-0"
+      style={{
+        x,
+        y,
+        // scale(1.15) gives each layer room to pan without revealing the
+        // dark background behind the edges
+        scale: 1.15,
+        zIndex: layer.zIndex,
+        willChange: "transform",
+        mixBlendMode: layer.blendMode,
+      }}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={src}
+        alt={isAlt ? alt : ""}
+        aria-hidden={!isAlt}
+        draggable={false}
+        style={{
+          width: "100%",
+          height: "100%",
+          objectFit: "cover",
+          objectPosition: "center top",
+          display: "block",
+          userSelect: "none",
+          pointerEvents: "none",
+          filter: layer.filter,
+          opacity: layer.opacity,
+        }}
+      />
+    </motion.div>
+  );
+}
+
+// ─── ParallaxPortrait ─────────────────────────────────────────────────────────
+
+function ParallaxPortrait({ src, alt }: { src: string; alt: string }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Raw pixel offset from container centre (not normalised)
+  // e.g. for a 900px wide panel: ranges roughly -450 … +450
+  const rawX = useMotionValue(0);
+  const rawY = useMotionValue(0);
+
+  // One shared spring — all layers read from these smoothed values,
+  // then apply their own speedMultiplier. This single smooth source
+  // ensures no jitter while keeping the math simple: layerX = rawX * mult
+  const spring = { stiffness: 80, damping: 22, mass: 0.9 };
+  const smoothX = useSpring(rawX, spring);
+  const smoothY = useSpring(rawY, spring);
+
+  // Card tilt derived from the same spring values
+  // Clamped to ±10 deg regardless of container size
+  const rotateY = useTransform(smoothX, (v) => Math.max(-10, Math.min(10,  v * 0.03)));
+  const rotateX = useTransform(smoothY, (v) => Math.max(-10, Math.min(10, -v * 0.03)));
+
+  // Box-shadow shifts opposite to tilt — simulates a real light source
+  const boxShadow = useTransform(
+    [smoothX, smoothY],
+    ([sx, sy]: number[]) => {
+      const bx = -sx * 0.06;
+      const by =  sy * 0.06 + 30;
+      return `${bx}px ${by}px 80px rgba(0,0,0,0.85), ${bx * 0.3}px ${by * 0.3}px 120px rgba(94,212,212,0.1), 0 0 0 1px rgba(94,212,212,0.07)`;
+    }
+  );
+
+  // Rim-light radial gradient follows cursor
+  const rimLight = useTransform(
+    [smoothX, smoothY],
+    ([x, y]: number[]) => {
+      const cx = 50 + (x as number) * 0.06 * 100;
+      const cy = 50 + (y as number) * 0.06 * 100;
+      return `radial-gradient(ellipse at ${cx}% ${cy}%, rgba(94,212,212,0.1) 0%, transparent 60%)`;
+    }
+  );
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    // Pixel offset from centre — this is what gets multiplied per layer
+    rawX.set(e.clientX - (rect.left + rect.width  / 2));
+    rawY.set(e.clientY - (rect.top  + rect.height / 2));
+  };
+
+  const handleMouseLeave = () => {
+    rawX.set(0);
+    rawY.set(0);
+  };
+
+  return (
+    // overflow-hidden lives here (not on the tilting card) so it doesn't
+    // cancel transformStyle: "preserve-3d" on the card below
+    <div
+      ref={containerRef}
+      className="w-full h-full"
+      style={{ perspective: "1000px", perspectiveOrigin: "50% 50%", overflow: "hidden" }}
+      onMouseMove={handleMouseMove}
+      onMouseLeave={handleMouseLeave}
+    >
+      {/* Tilting card — must be free of overflow-hidden */}
+      <motion.div
+        className="relative w-full h-full"
+        style={{
+          rotateX,
+          rotateY,
+          boxShadow,
+          transformStyle: "preserve-3d",
+          willChange: "transform",
+        }}
+      >
+        {/* Map through the layer config — each layer is a self-contained component
+            with its own useTransform hook so the per-layer x/y derivation is clean */}
+        {PARALLAX_LAYERS.map((layer) => (
+          <ParallaxLayer
+            key={layer.id}
+            src={src}
+            layer={layer}
+            mouseX={smoothX}
+            mouseY={smoothY}
+            isAlt={layer.id === "foreground"}
+            alt={alt}
+          />
+        ))}
+
+        {/* Gradient overlays — sit above all image layers */}
+        <div className="absolute inset-0 pointer-events-none" style={{
+          zIndex: 10,
+          background: "linear-gradient(to bottom, rgba(2,12,15,0.5) 0%, transparent 30%, rgba(2,12,15,0.93) 86%, rgba(2,12,15,1) 100%)",
+        }} />
+        <div className="absolute inset-y-0 left-0 pointer-events-none" style={{
+          zIndex: 10, width: 100,
+          background: "linear-gradient(to left, transparent, #020c0f)",
+        }} />
+
+        {/* Rim-light follows cursor */}
+        <motion.div className="absolute inset-0 pointer-events-none"
+          style={{ zIndex: 11, background: rimLight }}
+        />
+
+        {/* Name card — translateZ pushes it toward the viewer in 3D space */}
+        <div className="absolute bottom-10 left-10 right-8 pointer-events-none"
+          style={{ zIndex: 20, transform: "translateZ(40px)" }}
+        >
+          <p className="font-black tracking-tighter leading-tight mb-2"
+            style={{ fontSize: "clamp(1.4rem, 2.5vw, 2.4rem)", color: "#e8e4d9" }}
+          >
+            Dhanasekar S
+          </p>
+          <p className="text-label" style={{ color: "rgba(94,212,212,0.72)" }}>
+            AI Engineer &amp; Creative Developer
+          </p>
+        </div>
+
+      </motion.div>
+    </div>
+  );
+}
 
 // ─── MagneticMenu ─────────────────────────────────────────────────────────────
 
@@ -99,46 +324,10 @@ export default function MagneticMenu() {
             exit={{ clipPath: "inset(0 0 100% 0)", transition: { duration: 0.6, ease: [0.76, 0, 0.24, 1], delay: 0.25 } }}
           >
 
-            {/* ══ LEFT — portrait (30%) ══════════════════════════════════ */}
-            <motion.div
-              className="relative hidden md:flex-shrink-0"
-              style={{ width: "30%" }}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1, transition: { duration: 0.6, delay: 0.25 } }}
-              exit={{ opacity: 0, transition: { duration: 0.2 } }}
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src="/profile.png"
-                alt="Dhanasekar S"
-                style={{
-                  width: "100%",
-                  height: "100%",
-                  objectFit: "cover",
-                  objectPosition: "center top",
-                  filter: "grayscale(0.1) brightness(0.68)",
-                  display: "block",
-                }}
-              />
-              {/* Overlays */}
-              <div className="absolute inset-0" style={{ background: "linear-gradient(to bottom, rgba(2,12,15,0.5) 0%, transparent 40%, rgba(2,12,15,0.85) 100%)" }} />
-              <div className="absolute inset-y-0 right-0" style={{ width: 80, background: "linear-gradient(to right, transparent, #020c0f)" }} />
-
-              {/* Name / role */}
-              <div className="absolute bottom-10 left-8 right-10">
-                <p className="font-black tracking-tighter leading-tight mb-2" style={{ fontSize: "clamp(1.4rem, 2.5vw, 2.4rem)", color: "#e8e4d9" }}>
-                  Dhanasekar S
-                </p>
-                <p className="text-label" style={{ color: "rgba(94,212,212,0.65)" }}>
-                  AI Engineer &amp; Creative Developer
-                </p>
-              </div>
-            </motion.div>
-
-            {/* ══ RIGHT — nav (70%) ══════════════════════════════════════ */}
+            {/* ══ LEFT — nav (30%) ══════════════════════════════════════ */}
             <div
-              className="flex flex-col justify-between flex-1 px-10 sm:px-14 py-8"
-              style={{ background: "linear-gradient(135deg, #0a2e32 0%, #061a1e 55%, #020c0f 100%)" }}
+              className="flex flex-col justify-between flex-shrink-0 px-10 sm:px-14 py-8"
+              style={{ width: "30%", background: "linear-gradient(135deg, #0a2e32 0%, #061a1e 55%, #020c0f 100%)" }}
             >
               {/* Top: DS / tagline */}
               <motion.div
@@ -166,7 +355,7 @@ export default function MagneticMenu() {
                   computer vision, scalable pipelines. Currently at FIS Global.
                 </motion.p>
 
-                {/* Nav items — each with its own explicit animate */}
+                {/* Nav items */}
                 <nav className="flex flex-col">
                   {NAV_LINKS.map((link, i) => (
                     <motion.div
@@ -207,7 +396,7 @@ export default function MagneticMenu() {
                         <span className="relative">
                           <motion.span
                             className="block font-black leading-none tracking-tighter"
-                            style={{ fontSize: "clamp(2.6rem, 5.5vw, 6.5rem)", color: "#e8e4d9", willChange: "transform" }}
+                            style={{ fontSize: "clamp(1.6rem, 3vw, 3.5rem)", color: "#e8e4d9", willChange: "transform" }}
                             variants={{
                               rest:  { x: 0,  color: "#e8e4d9" },
                               hover: { x: 12, color: "#ffffff", transition: { duration: 0.3, ease: EASE } },
@@ -269,6 +458,17 @@ export default function MagneticMenu() {
                 </div>
               </motion.div>
             </div>
+
+            {/* ══ RIGHT — 3D Parallax portrait (70%) ═══════════════════════ */}
+            <motion.div
+              className="relative hidden md:block flex-1"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1, transition: { duration: 0.6, delay: 0.25 } }}
+              exit={{ opacity: 0, transition: { duration: 0.2 } }}
+              style={{ padding: "32px 32px 32px 0" }}
+            >
+              <ParallaxPortrait src="/profile.png" alt="Dhanasekar S" />
+            </motion.div>
 
           </motion.div>
         )}
