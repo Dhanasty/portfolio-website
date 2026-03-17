@@ -36,30 +36,30 @@ const EASE = [0.22, 1, 0.36, 1] as const;
 const PARALLAX_LAYERS = [
   {
     id: "anchor",
-    // Locked — acts as the stable cinematic backdrop
-    speedMultiplier: 0,
+    // Drifts slightly with the mouse — stable cinematic backdrop
+    speedMultiplier: 0.02,
     filter: "brightness(0.32) blur(3px) saturate(0.65)",
-    opacity: 1,
+    opacity: 0.5,
     blendMode: "normal" as const,
     zIndex: 1,
-    ghostOffsetX: 0,   // no static offset for the anchor
+    ghostOffsetX: 0,
   },
   {
     id: "midground",
-    // Slow drift — mid-depth details
+    // Trails behind with low-stiffness spring — holographic echo
     speedMultiplier: 0.05,
-    filter: "brightness(0.6) hue-rotate(160deg) saturate(2) blur(0.4px)",
-    opacity: 0.5,
+    filter: "brightness(0.7) hue-rotate(180deg) saturate(2.5) blur(0.5px)",
+    opacity: 0.2,
     blendMode: "screen" as const,
     zIndex: 2,
-    ghostOffsetX: 14,  // static 14px right offset → chromatic ghost look at rest
+    ghostOffsetX: 14,
   },
   {
     id: "foreground",
-    // Negative multiplier → moves OPPOSITE to mouse → "looking around" the subject
-    speedMultiplier: -0.15,
+    // Counter-movement: moves OPPOSITE to mouse — "looking around" the subject
+    speedMultiplier: -0.06,
     filter: "brightness(0.8) contrast(1.08) saturate(0.95)",
-    opacity: 1,
+    opacity: 0.6,
     blendMode: "normal" as const,
     zIndex: 3,
     ghostOffsetX: 0,
@@ -93,9 +93,8 @@ function ParallaxLayer({
       style={{
         x,
         y,
-        // scale(1.15) gives each layer room to pan without revealing the
-        // dark background behind the edges
-        scale: 1.15,
+        // scale(1.2) gives each layer room to pan without revealing edges
+        scale: 1.2,
         zIndex: layer.zIndex,
         willChange: "transform",
         mixBlendMode: layer.blendMode,
@@ -128,26 +127,24 @@ function ParallaxLayer({
 function ParallaxPortrait({ src, alt }: { src: string; alt: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Raw pixel offset from container centre (not normalised)
-  // e.g. for a 900px wide panel: ranges roughly -450 … +450
   const rawX = useMotionValue(0);
   const rawY = useMotionValue(0);
 
-  // One shared spring — all layers read from these smoothed values,
-  // then apply their own speedMultiplier. This single smooth source
-  // ensures no jitter while keeping the math simple: layerX = rawX * mult
-  const spring = { stiffness: 80, damping: 22, mass: 0.9 };
-  const smoothX = useSpring(rawX, spring);
-  const smoothY = useSpring(rawY, spring);
+  // Three separate springs — each layer gets its own stiffness so they
+  // settle at different rates, creating a trailing / liquid catch-up effect.
+  const anchorX = useSpring(rawX, { stiffness: 80,  damping: 22, mass: 0.9 });
+  const anchorY = useSpring(rawY, { stiffness: 80,  damping: 22, mass: 0.9 });
+  const midX    = useSpring(rawX, { stiffness: 40,  damping: 18, mass: 1.2 }); // sluggish — trails behind
+  const midY    = useSpring(rawY, { stiffness: 40,  damping: 18, mass: 1.2 });
+  const foreX   = useSpring(rawX, { stiffness: 120, damping: 25, mass: 0.8 }); // snappy — leads the stack
+  const foreY   = useSpring(rawY, { stiffness: 120, damping: 25, mass: 0.8 });
 
-  // Card tilt derived from the same spring values
-  // Clamped to ±10 deg regardless of container size
-  const rotateY = useTransform(smoothX, (v) => Math.max(-10, Math.min(10,  v * 0.03)));
-  const rotateX = useTransform(smoothY, (v) => Math.max(-10, Math.min(10, -v * 0.03)));
+  // Card tilt uses the foreground spring (most responsive)
+  const rotateY = useTransform(foreX, (v) => Math.max(-10, Math.min(10,  v * 0.03)));
+  const rotateX = useTransform(foreY, (v) => Math.max(-10, Math.min(10, -v * 0.03)));
 
-  // Box-shadow shifts opposite to tilt — simulates a real light source
   const boxShadow = useTransform(
-    [smoothX, smoothY],
+    [foreX, foreY],
     ([sx, sy]: number[]) => {
       const bx = -sx * 0.06;
       const by =  sy * 0.06 + 30;
@@ -155,15 +152,21 @@ function ParallaxPortrait({ src, alt }: { src: string; alt: string }) {
     }
   );
 
-  // Rim-light radial gradient follows cursor
   const rimLight = useTransform(
-    [smoothX, smoothY],
+    [foreX, foreY],
     ([x, y]: number[]) => {
       const cx = 50 + (x as number) * 0.06 * 100;
       const cy = 50 + (y as number) * 0.06 * 100;
       return `radial-gradient(ellipse at ${cx}% ${cy}%, rgba(94,212,212,0.1) 0%, transparent 60%)`;
     }
   );
+
+  // Map each layer to its dedicated spring pair
+  const layerSprings = [
+    { x: anchorX, y: anchorY },
+    { x: midX,    y: midY    },
+    { x: foreX,   y: foreY   },
+  ];
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     const rect = containerRef.current?.getBoundingClientRect();
@@ -199,15 +202,13 @@ function ParallaxPortrait({ src, alt }: { src: string; alt: string }) {
           willChange: "transform",
         }}
       >
-        {/* Map through the layer config — each layer is a self-contained component
-            with its own useTransform hook so the per-layer x/y derivation is clean */}
-        {PARALLAX_LAYERS.map((layer) => (
+        {PARALLAX_LAYERS.map((layer, i) => (
           <ParallaxLayer
             key={layer.id}
             src={src}
             layer={layer}
-            mouseX={smoothX}
-            mouseY={smoothY}
+            mouseX={layerSprings[i].x}
+            mouseY={layerSprings[i].y}
             isAlt={layer.id === "foreground"}
             alt={alt}
           />

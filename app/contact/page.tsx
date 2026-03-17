@@ -163,8 +163,8 @@ export default function ContactPage() {
           </p>
           <div className="flex items-center gap-8">
             {[
-              { label: "LinkedIn", href: "https://linkedin.com/in/dhanasekar" },
-              { label: "GitHub",   href: "https://github.com/dhanasekar" },
+              { label: "LinkedIn", href: "https://www.linkedin.com/in/dhanasekar-s-b8935a1b7" },
+              { label: "GitHub",   href: "https://github.com/dhanasty" },
               { label: "Email",    href: "mailto:dhanasty@gmail.com" },
             ].map(({ label, href }) => (
               <a
